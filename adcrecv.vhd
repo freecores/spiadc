@@ -10,8 +10,8 @@
 -- Description : (win1251) SPI мастер-приемник с минимальными затратами ресурсов.
 --      и возможностью выдачи shut-down посылки. ѕреназначено дл€ загрузки ј÷ѕ AD747x.
 --      ћожет загружать настраиваемую часть SPI последовательности (кусок).
---		формирует последовательность вхождени€ и выхода из посылки сигналов nSS и SCK:
---		    после посылка обозначаетс€ активным nSS('0'), на старте посылки SCK='1' полтакта
+--      формирует последовательность вхождени€ и выхода из посылки сигналов nSS и SCK:
+--          посылка обозначаетс€ активным nSS('0'), на старте посылки SCK='1' полтакта
 --          загружаютс€ биты по переднему фронту SCK, последний бит посылки неимеет заднего
 --           фронта, SCK = '1' все пассивное врем€.
 
@@ -21,6 +21,28 @@
 --          activate nSS='0' on frame transfer, SCK='1' for half clock cycle at frame start,
 --          data loads on rising front SCK, last frame bit have no falling edge SCK,
 --          SCK='1' durung inactive period.   
+
+--   SDLen, SDMax:
+        -- sets len of short spi sequence for poweroff purposes short (SDLen) and maximum (SDMax) length
+--   QuietLen:
+        -- requred TimeOut before start 
+--   Start:
+        --Start lock on rising CLK, and changes ignores during transmition. if one still high after transmition 
+        --   ends, then new frame starts after QuietLen timeout if ContinueStart not active
+--   ContinueStart:
+        -- if false then spi produce controling sequense of xfer entry and inter-frame pause
+        -- else spi start new frame xfer immeidate after completing current frame
+--   ShutDown
+        -- locks by high level, after Shuting down complete new SutDown sequence can be forced by Start
+        -- if one activate during transmition, then it forces current frame to close if it can (beetween SDLen..SDMax bits)
+        --    or generate short shutdown frame after completing current frae else
+--   Ready:
+        -- rising edge of ready can be used for loading DQ data to dest.
+--   Shift:
+        -- shift clock for internal data register  intended to expand load logic to parallel loading registers, 
+        -- to make a multi chanel reciever
+--   Sleeping
+        -- State of ADC power mode - is it shutdowned.
 --------------------------------------------------------------------
 -- $Log$
 --------------------------------------------------------------------
@@ -35,19 +57,14 @@ ENTITY AdcRecv IS
         SPILen      : positive  := 16;
         DataLen     : positive  := 16;
         DataOffset  : natural   := 0;
-        -- ShutDownLen sets len of short spi sequence for poweroff purposes
         SDLen       : natural   := 1;
         SDMax       : natural   := 10;
-        -- requred TimeOut before start 
         QuietLen    : natural   := 1
     );
 	PORT
 	(
         CLK     : IN STD_LOGIC;
         Start   : IN STD_LOGIC;
-
-        -- if false then spi produce controling sequense of xfer entry and inter-frame pause
-        -- else spi start new frame xfer immeidate after completing current frame
         ContinueStart : in STD_LOGIC := '0';
         ShutDown: IN STD_LOGIC;
         reset   : IN STD_LOGIC;
@@ -57,10 +74,9 @@ ENTITY AdcRecv IS
         nSS     : OUT STD_LOGIC;
 
         DQ      : OUT std_logic_vector(DataLen-1 downto 0);--STD_LOGIC_2D(Chanels-1 downto 0, DataLen-1 downto 0);
-        -- rising edge of ready can be used for loading DQ data to dest.
         Ready   : OUT STD_LOGIC;
-        -- used to expand load logic to parallel loading registers, to make a multi chanel reciever
-        Shift	: OUT STD_LOGIC
+        Shift   : OUT STD_LOGIC;
+        Sleeping : OUT STD_LOGIC
 	);
 	-- {{ALTERA_IO_END}} DO NOT REMOVE THIS LINE!
 	
@@ -131,6 +147,8 @@ begin
             SDDone      <= SDEnough;
         end if;
     end process;
+
+    Sleeping <= SDDone;
 
     Qsafer: if QuietLen > 1 generate
 		QuietOk <= '1' when (QuietCnt >= QuietLen) else '0';
